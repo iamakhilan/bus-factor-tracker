@@ -98,19 +98,50 @@ CREATE INDEX idx_issue_repo ON issue(repo_id);
 CREATE INDEX idx_snapshot_repo_time ON bus_factor_snapshot(repo_id, computed_at);
 
 
--- Sampled recent commit-to-file ownership. This is an observed sample, not
--- a complete historical blame index. Each sync refreshes the sampled rows.
-CREATE TABLE module_ownership (
-    repo_id       INT NOT NULL,
-    file_path       VARCHAR(512) NOT NULL,
-    contributor_id INT NOT NULL,
-    commit_count  INT NOT NULL DEFAULT 0,
-    additions     INT NOT NULL DEFAULT 0,
-    deletions     INT NOT NULL DEFAULT 0,
-    sampled_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, file_path, contributor_id),
-    FOREIGN KEY (repo_id) REFERENCES repository(repo_id) ON DELETE CASCADE,
-    FOREIGN KEY (contributor_id) REFERENCES contributor(contributor_id) ON DELETE CASCADE
+-- Normalized sampled file/module ownership.
+-- A module is a repository-specific top-level path. Files belong to one module;
+-- contributor activity is a separate many-to-many fact at file/contributor grain.
+CREATE TABLE repo_module (
+    module_id    INT AUTO_INCREMENT PRIMARY KEY,
+    repo_id      INT NOT NULL,
+    module_path  VARCHAR(255) NOT NULL,
+    UNIQUE KEY uq_repo_module_path (repo_id, module_path),
+    UNIQUE KEY uq_repo_module_pair (repo_id, module_id),
+    CONSTRAINT fk_repo_module_repository
+      FOREIGN KEY (repo_id) REFERENCES repository(repo_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE INDEX idx_module_ownership_repo ON module_ownership(repo_id);
+CREATE TABLE repository_file (
+    file_id     BIGINT AUTO_INCREMENT PRIMARY KEY,
+    repo_id     INT NOT NULL,
+    module_id   INT NOT NULL,
+    file_path   VARCHAR(512) NOT NULL,
+    UNIQUE KEY uq_repo_file_path (repo_id, file_path),
+    UNIQUE KEY uq_repo_file_pair (repo_id, file_id),
+    KEY idx_repository_file_module (repo_id, module_id),
+    CONSTRAINT fk_repository_file_module
+      FOREIGN KEY (repo_id, module_id)
+      REFERENCES repo_module(repo_id, module_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE file_contributor_activity (
+    file_id        BIGINT NOT NULL,
+    contributor_id INT NOT NULL,
+    commit_count   INT NOT NULL DEFAULT 0,
+    additions      INT NOT NULL DEFAULT 0,
+    deletions      INT NOT NULL DEFAULT 0,
+    sampled_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (file_id, contributor_id),
+    CONSTRAINT fk_file_activity_file
+      FOREIGN KEY (file_id) REFERENCES repository_file(file_id) ON DELETE CASCADE,
+    CONSTRAINT fk_file_activity_contributor
+      FOREIGN KEY (contributor_id) REFERENCES contributor(contributor_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Compatibility view for existing read-only queries. It is not a stored
+-- base table; normalized facts live in the three tables above.
+CREATE VIEW module_ownership AS
+SELECT rf.repo_id, rf.file_path, fca.contributor_id,
+       fca.commit_count, fca.additions, fca.deletions, fca.sampled_at
+FROM repository_file rf
+JOIN file_contributor_activity fca ON fca.file_id = rf.file_id;
