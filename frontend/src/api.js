@@ -2,7 +2,7 @@
 // management library — the dashboard is small enough that plain fetch +
 // React state is the right amount of complexity, not less.
 
-const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\\/$/, '')
+const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
 async function getJSON(path, options = {}) {
   const res = await fetch(`${API_ROOT}${path}`, options)
