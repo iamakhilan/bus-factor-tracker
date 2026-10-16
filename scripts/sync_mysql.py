@@ -551,23 +551,55 @@ def sync_repo(conn, owner, repo):
             contributor_id = upsert_contributor(cur, username)
             upsert_repo_contributor(cur, repo_id, contributor_id, total_commits, additions, deletions)
 
-        # --- sampled contributor-to-file/module ownership ---
+        # --- sampled contributor-to-file/module ownership (normalized tables) ---
         if module_ownership is not None:
-            cur.execute("DELETE FROM module_ownership WHERE repo_id = %s", (repo_id,))
+            # Cascades remove file activity and files before removing modules.
+            cur.execute("DELETE FROM repo_module WHERE repo_id = %s", (repo_id,))
             for sample in module_ownership:
                 contributor_id = upsert_contributor(cur, sample["username"])
+                file_path = sample["file_path"]
+                module_path = file_path.split("/", 1)[0] if "/" in file_path else "(root files)"
+
                 cur.execute(
                     """
-                    INSERT INTO module_ownership
-                        (repo_id, file_path, contributor_id, commit_count, additions, deletions, sampled_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    INSERT INTO repo_module (repo_id, module_path)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE module_id = LAST_INSERT_ID(module_id)
+                    """,
+                    (repo_id, module_path),
+                )
+                cur.execute(
+                    "SELECT module_id FROM repo_module WHERE repo_id = %s AND module_path = %s",
+                    (repo_id, module_path),
+                )
+                module_id = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    INSERT INTO repository_file (repo_id, module_id, file_path)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE file_id = LAST_INSERT_ID(file_id)
+                    """,
+                    (repo_id, module_id, file_path),
+                )
+                cur.execute(
+                    "SELECT file_id FROM repository_file WHERE repo_id = %s AND file_path = %s",
+                    (repo_id, file_path),
+                )
+                file_id = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    INSERT INTO file_contributor_activity
+                        (file_id, contributor_id, commit_count, additions, deletions, sampled_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
                     ON DUPLICATE KEY UPDATE
                         commit_count = VALUES(commit_count),
                         additions = VALUES(additions),
                         deletions = VALUES(deletions),
                         sampled_at = NOW()
                     """,
-                    (repo_id, sample["file_path"], contributor_id, sample["commit_count"],
+                    (file_id, contributor_id, sample["commit_count"],
                      sample["additions"], sample["deletions"]),
                 )
 
