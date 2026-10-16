@@ -104,7 +104,7 @@ export default function App() {
           </div>
 
           {repos === null ? (
-            {error ? null : <div className="state-message">Loading…</div>}
+            error ? null : <div className="state-message">Loading…</div>
           ) : (
             <RepoTable
               repos={visibleRepos}
