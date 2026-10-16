@@ -802,7 +802,7 @@ a {
   --score-angle: 0deg;
   width: 142px; height: 142px; flex: 0 0 142px; border-radius: 50%;
   display: grid; place-items: center;
-  background: conic-gradient(var(--risk-healthy) var(--score-angle), var(--border) var(--score-angle));
+  background: conic-gradient(var(--score-color, var(--risk-healthy)) var(--score-angle), var(--border) var(--score-angle));
   position: relative;
 }
 .health-score-ring::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--panel); }
