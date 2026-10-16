@@ -11,9 +11,10 @@ const FACTOR_LABELS = {
 
 function ScoreRing({ score }) {
   const safeScore = score == null ? 0 : Math.max(0, Math.min(100, score))
+  const scoreColor = score == null ? 'var(--border)' : score >= 80 ? 'var(--risk-healthy)' : score >= 60 ? 'var(--risk-medium)' : score >= 40 ? 'var(--risk-high)' : 'var(--risk-critical)'
   return (
     <div className={`health-score-ring ${score == null ? 'is-empty' : ''}`}
-      style={{ '--score-angle': `${safeScore * 3.6}deg` }} aria-label={score == null ? 'Score unavailable' : `Health score ${score} out of 100`}>
+      style={{ '--score-angle': `${safeScore * 3.6}deg`, '--score-color': scoreColor }} aria-label={score == null ? 'Score unavailable' : `Health score ${score} out of 100`}>
       <div className="health-score-ring-inner">
         <strong>{score == null ? '—' : score}</strong>
         <span>out of 100</span>
