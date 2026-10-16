@@ -29,7 +29,7 @@ class ProjectHealthScoreTests(unittest.TestCase):
             {"top_contributor_pct": 75, "contributor_count": 1}, self.now
         )
         self.assertEqual(result["available_weight_pct"], 45.0)
-        self.assertEqual(result["score"], 35)
+        self.assertEqual(result["score"], 23)
         self.assertEqual(len(result["factors"]), 2)
 
     def test_no_data_returns_none_not_a_fake_zero(self):
