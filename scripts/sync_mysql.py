@@ -360,7 +360,7 @@ def upsert_release(cur, repo_id, published_by_id, release):
 def compute_and_insert_snapshot(cur, repo_id):
     """
     Phase 4: bus factor, top-contributor %, active contributor count, and
-    median issue response time are now all computed with SQL window
+    median first-response proxy are now computed with SQL window
     functions (MySQL 8.0+), not Python loops. This is the version worth
     showing off in your report — it demonstrates CTEs, SUM() OVER(),
     ROW_NUMBER() OVER(), and a window-function-based median, all of which
@@ -426,8 +426,8 @@ def compute_and_insert_snapshot(cur, repo_id):
     median_row = cur.fetchone()
     median_issue_response_hours = float(median_row[0]) if median_row and median_row[0] is not None else None
 
-    # Risk scoring: bus factor is primary, but a very slow/absent maintainer
-    # response time bumps risk up even if commit concentration alone looked okay.
+    # Risk scoring: bus factor is primary, but a very slow first non-author
+    # response proxy can bump risk up. Public data does not verify maintainer identity.
     if bus_factor == 1:
         risk_level = "Critical"
     elif bus_factor == 2:
