@@ -2,10 +2,10 @@
 // management library — the dashboard is small enough that plain fetch +
 // React state is the right amount of complexity, not less.
 
-const API_ROOT = 'http://localhost:8000'
+const API_ROOT = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\\/$/, '')
 
-async function getJSON(path) {
-  const res = await fetch(`${API_ROOT}${path}`)
+async function getJSON(path, options = {}) {
+  const res = await fetch(`${API_ROOT}${path}`, options)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `Request failed: ${res.status}`)
@@ -33,8 +33,16 @@ export function fetchSummary() {
   return getJSON('/api/stats/summary')
 }
 
-export function searchGithub(query) {
-  return getJSON(`/api/github/search?q=${encodeURIComponent(query)}`)
+export function searchGithub(query, options = {}) {
+  return getJSON(`/api/github/search?q=${encodeURIComponent(query)}`, options)
+}
+
+export function fetchProjectHealth(owner, name) {
+  return getJSON(`/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/health`)
+}
+
+export function fetchDependencyMap(owner, name) {
+  return getJSON(`/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/dependency-map`)
 }
 
 export async function addRepo(owner, name) {
