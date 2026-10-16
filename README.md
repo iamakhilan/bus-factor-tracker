@@ -63,6 +63,8 @@ bus-factor-tracker/
 │   ├── schema_mysql.sql  # Full database schema
 │   ├── queries_mysql.sql # Analytics queries
 │   └── migrations/       # Existing-database migrations
+├── docs/
+│   └── database-normalization.md # 1NF–5NF design and migration guide
 ├── tests/
 │   └── test_health_score.py
 ├── repos.txt            # Curated list of repos to track
