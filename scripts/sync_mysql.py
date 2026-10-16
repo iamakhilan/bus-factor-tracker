@@ -77,7 +77,7 @@ def get_json(url, retries=5, initial_wait=2, max_wait=10):
     """
     wait = initial_wait
     for attempt in range(retries):
-        resp = requests.get(url, headers=HEADERS)
+        resp = requests.get(url, headers=HEADERS, timeout=20)
         if resp.status_code == 202:
             print(f"    stats not ready yet, retrying in {wait}s... ({url})")
             time.sleep(wait)
@@ -102,6 +102,32 @@ def fetch_commit_activity(owner, repo):
     """Total commits per week for the last year. One call."""
     data = get_json(f"{API_ROOT}/repos/{owner}/{repo}/stats/commit_activity")
     return data or []
+
+
+def fetch_recent_module_ownership(owner, repo, commit_limit=12):
+    """Sample recent commit file lists to estimate contributor-to-module ownership."""
+    commits = get_json(f"{API_ROOT}/repos/{owner}/{repo}/commits?per_page=30") or []
+    totals = {}
+    for item in commits[:commit_limit]:
+        author = item.get("author")
+        sha = item.get("sha")
+        if not author or not author.get("login") or not sha:
+            continue
+        detail = get_json(f"{API_ROOT}/repos/{owner}/{repo}/commits/{sha}")
+        login = author["login"]
+        for changed in detail.get("files", []) or []:
+            path = changed.get("filename")
+            if not path:
+                continue
+            key = (path, login)
+            row = totals.setdefault(key, {
+                "file_path": path, "username": login, "commit_count": 0,
+                "additions": 0, "deletions": 0,
+            })
+            row["commit_count"] += 1
+            row["additions"] += int(changed.get("additions") or 0)
+            row["deletions"] += int(changed.get("deletions") or 0)
+    return list(totals.values())
 
 
 def get_paginated(url, max_pages=3, per_page=100, stop_before=None, updated_field="updated_at"):
@@ -186,19 +212,18 @@ def fetch_releases(owner, repo, since=None):
     return get_paginated(url, max_pages=2, stop_before=since, updated_field="published_at")
 
 
-def fetch_first_response_at(owner, repo, issue_number):
-    """
-    GitHub doesn't give first-response time directly — it has to be derived
-    from the first comment on an issue. One extra API call per issue, so
-    this is deliberately only used for a capped, recent subset of issues
-    (see MAX_ISSUES_FOR_RESPONSE_TIME below) to keep rate-limit usage sane.
-    """
-    url = f"{API_ROOT}/repos/{owner}/{repo}/issues/{issue_number}/comments?per_page=1"
-    comments = get_json(url)
-    if comments:
-        return comments[0]["created_at"]
-    return None
+def fetch_first_response_at(owner, repo, issue_number, issue_author=None):
+    """Return the first comment by someone other than the issue author.
 
+    This is a first non-author response proxy, not verified maintainer time.
+    """
+    url = f"{API_ROOT}/repos/{owner}/{repo}/issues/{issue_number}/comments?per_page=100"
+    comments = get_json(url) or []
+    for comment in comments:
+        login = (comment.get("user") or {}).get("login")
+        if login and login.casefold() != (issue_author or "").casefold():
+            return comment.get("created_at")
+    return None
 
 def get_previous_sync_time(cur, owner, repo):
     """
@@ -217,14 +242,15 @@ def get_previous_sync_time(cur, owner, repo):
 def upsert_repo(cur, owner, repo, meta):
     cur.execute(
         """
-        INSERT INTO repository (owner, name, primary_language, stars, forks, created_at, is_archived, last_synced_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        INSERT INTO repository (owner, name, primary_language, stars, forks, created_at, is_archived, last_synced_at, last_pushed_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
         ON DUPLICATE KEY UPDATE
             primary_language = VALUES(primary_language),
             stars = VALUES(stars),
             forks = VALUES(forks),
             is_archived = VALUES(is_archived),
-            last_synced_at = NOW()
+            last_synced_at = NOW(),
+            last_pushed_at = VALUES(last_pushed_at)
         """,
         (
             owner,
@@ -234,6 +260,7 @@ def upsert_repo(cur, owner, repo, meta):
             meta.get("forks_count", 0),
             meta.get("created_at", "")[:10] if meta.get("created_at") else None,
             meta.get("archived", False),
+            to_mysql_dt(meta.get("pushed_at")),
         ),
     )
     # MySQL's ON DUPLICATE KEY UPDATE doesn't return the id via RETURNING like Postgres,
@@ -289,7 +316,7 @@ def upsert_issue(cur, repo_id, opened_by_id, issue, first_response_at):
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             state = VALUES(state),
-            first_response_at = VALUES(first_response_at),
+            first_response_at = COALESCE(VALUES(first_response_at), first_response_at),
             closed_at = VALUES(closed_at)
         """,
         (
@@ -352,8 +379,11 @@ def compute_and_insert_snapshot(cur, repo_id):
                 contributor_id,
                 total_commits,
                 SUM(total_commits) OVER () AS repo_total_commits,
-                SUM(total_commits) OVER (ORDER BY total_commits DESC) AS running_total,
-                ROW_NUMBER() OVER (ORDER BY total_commits DESC) AS contributor_rank,
+                SUM(total_commits) OVER (
+                    ORDER BY total_commits DESC, contributor_id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS running_total,
+                ROW_NUMBER() OVER (ORDER BY total_commits DESC, contributor_id ASC) AS contributor_rank,
                 COUNT(*) OVER () AS active_contributor_count
             FROM repo_contributor
             WHERE repo_id = %s
@@ -458,6 +488,13 @@ def sync_repo(conn, owner, repo):
     issues = fetch_issues(owner, repo, since=since_iso)        # incremental via GitHub's `since` param
     pull_requests = fetch_pull_requests(owner, repo, since=since_iso)  # incremental via early-exit pagination
     releases = fetch_releases(owner, repo, since=since_iso)          # incremental via early-exit pagination, same as PRs
+    try:
+        module_ownership = fetch_recent_module_ownership(owner, repo)
+    except Exception as exc:
+        # A transient failure must not erase the last successfully sampled map.
+        print(f"  module ownership sample unavailable; keeping previous sample: {exc}")
+        module_ownership = None
+
 
     # First-response-comment lookups are independent of each other, so fetch
     # them concurrently instead of one at a time — this is the single biggest
@@ -473,7 +510,10 @@ def sync_repo(conn, owner, repo):
     if issues_needing_response_time:
         with ThreadPoolExecutor(max_workers=10) as pool:
             futures = {
-                pool.submit(fetch_first_response_at, owner, repo, issue["number"]): issue["number"]
+                pool.submit(
+                    fetch_first_response_at, owner, repo, issue["number"],
+                    (issue.get("user") or {}).get("login")
+                ): issue["number"]
                 for issue in issues_needing_response_time
             }
             for future in futures:
@@ -483,6 +523,11 @@ def sync_repo(conn, owner, repo):
     cur = conn.cursor()
     try:
         repo_id = upsert_repo(cur, owner, repo, meta)
+
+        # GitHub can return an empty list while asynchronous stats are warming.
+        # Reconcile old rows only when a non-empty result is available.
+        if contributor_stats:
+            cur.execute("DELETE FROM repo_contributor WHERE repo_id = %s", (repo_id,))
 
         # --- contributors + their commit stats ---
         for entry in contributor_stats:
@@ -496,6 +541,26 @@ def sync_repo(conn, owner, repo):
 
             contributor_id = upsert_contributor(cur, username)
             upsert_repo_contributor(cur, repo_id, contributor_id, total_commits, additions, deletions)
+
+        # --- sampled contributor-to-file/module ownership ---
+        if module_ownership is not None:
+            cur.execute("DELETE FROM module_ownership WHERE repo_id = %s", (repo_id,))
+            for sample in module_ownership:
+                contributor_id = upsert_contributor(cur, sample["username"])
+                cur.execute(
+                    """
+                    INSERT INTO module_ownership
+                        (repo_id, file_path, contributor_id, commit_count, additions, deletions, sampled_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        commit_count = VALUES(commit_count),
+                        additions = VALUES(additions),
+                        deletions = VALUES(deletions),
+                        sampled_at = NOW()
+                    """,
+                    (repo_id, sample["file_path"], contributor_id, sample["commit_count"],
+                     sample["additions"], sample["deletions"]),
+                )
 
         # --- weekly commit activity (for trend/backlog-style queries later) ---
         upsert_weekly_activity(cur, repo_id, commit_activity)
