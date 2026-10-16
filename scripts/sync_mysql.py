@@ -250,7 +250,7 @@ def upsert_repo(cur, owner, repo, meta):
             forks = VALUES(forks),
             is_archived = VALUES(is_archived),
             last_synced_at = NOW(),
-            last_pushed_at = VALUES(last_pushed_at)
+            last_pushed_at = COALESCE(VALUES(last_pushed_at), last_pushed_at)
         """,
         (
             owner,
