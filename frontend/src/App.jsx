@@ -30,9 +30,9 @@ export default function App() {
   }, [theme])
 
   function reload() {
-    fetchSummary().then(setSummary).catch((e) => setError(e.message))
+    fetchSummary().then((value) => { setSummary(value); setError(null) }).catch((e) => setError(e.message))
     fetchRepos({ risk: filter === 'All' ? undefined : filter, sort: 'risk' })
-      .then(setRepos)
+      .then((value) => { setRepos(value); setError(null) })
       .catch((e) => setError(e.message))
   }
 
