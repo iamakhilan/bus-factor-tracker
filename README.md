@@ -161,6 +161,7 @@ Important data limits:
 - Issue records are bounded/incremental in this project, so issue evidence describes records stored locally and may not represent the repository's complete backlog.
 - Release recency is based on releases collected by the sync pipeline.
 - Repository `pushed_at` is a recent-activity proxy; it does not prove that issues are being answered or releases are being shipped.
+- The legacy median issue-response metric now uses the first comment by someone other than the issue author; public data does not reliably prove that commenter is a maintainer.
 - The score does not currently treat archived status as a negative signal; archived projects may be intentionally complete.
 
 ## Contributor Dependency Map
