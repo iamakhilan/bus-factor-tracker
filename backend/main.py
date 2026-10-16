@@ -437,7 +437,7 @@ def get_contributor_dependency_map(owner: str, name: str, conn: MySQLConnection 
             "sample": {
                 "source": "GitHub commit detail files from up to 12 recent commits at last successful sync",
                 "complete_history": False,
-                "commit_details_sampled": len({(row["file_path"], row["github_username"]) for row in ownership_rows}),
+                "file_contributor_pairs": len({(row["file_path"], row["github_username"]) for row in ownership_rows}),
                 "note": "Ownership is an observed recent sample, not complete git blame. No graph is fabricated when sample data is unavailable.",
             },
         }
