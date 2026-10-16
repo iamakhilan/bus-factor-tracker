@@ -530,16 +530,19 @@ def sync_repo(conn, owner, repo):
     try:
         repo_id = upsert_repo(cur, owner, repo, meta)
 
-        # GitHub can return an empty list while asynchronous stats are warming.
-        # Reconcile old rows only when a non-empty result is available.
-        if contributor_stats:
+        # GitHub can return empty stats while its cache is warming, and may
+        # include null authors for deleted accounts. Reconcile only when at
+        # least one valid contributor is present, otherwise preserve old rows.
+        valid_contributor_stats = [
+            entry for entry in contributor_stats
+            if entry.get("author") and entry["author"].get("login")
+        ]
+        if valid_contributor_stats:
             cur.execute("DELETE FROM repo_contributor WHERE repo_id = %s", (repo_id,))
 
         # --- contributors + their commit stats ---
-        for entry in contributor_stats:
-            author = entry.get("author")
-            if not author:
-                continue  # GitHub sometimes returns null author for deleted accounts
+        for entry in valid_contributor_stats:
+            author = entry["author"]
             username = author["login"]
             total_commits = entry.get("total", 0)
             additions = sum(w.get("a", 0) for w in entry.get("weeks", []))
