@@ -3,6 +3,8 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { fetchRepoDetail, fetchRepoTrend } from '../api.js'
 import RiskBadge from './RiskBadge.jsx'
 import ConcentrationBar from './ConcentrationBar.jsx'
+import ContributorDependencyMap from './ContributorDependencyMap.jsx'
+import ProjectHealthScore from './ProjectHealthScore.jsx'
 
 const RISK_COLOR = {
   Critical: '#e5484d',
@@ -98,6 +100,9 @@ export default function RepoDetail({ repoRef, onBack }) {
           <div className="stat-label">Median issue response</div>
         </div>
       </div>
+
+      <ProjectHealthScore owner={repoRef.owner} name={repoRef.name} />
+      <ContributorDependencyMap owner={repoRef.owner} name={repoRef.name} />
 
       {trend && trend.length > 1 && (
         <div className="panel">
