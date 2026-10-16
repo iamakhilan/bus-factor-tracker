@@ -545,13 +545,19 @@ def search_github_repos(q: str = Query(..., min_length=2)):
     if not GITHUB_TOKEN:
         raise HTTPException(status_code=500, detail="GITHUB_TOKEN is not configured on the backend")
 
-    resp = gh_requests.get(
-        "https://api.github.com/search/repositories",
-        params={"q": q, "per_page": 8, "sort": "stars", "order": "desc"},
-        headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
-    )
-    if resp.status_code == 403:
+    try:
+        resp = gh_requests.get(
+            "https://api.github.com/search/repositories",
+            params={"q": q, "per_page": 8, "sort": "stars", "order": "desc"},
+            headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
+            timeout=15,
+        )
+    except gh_requests.RequestException:
+        raise HTTPException(status_code=502, detail="GitHub search is temporarily unavailable")
+    if resp.status_code in (403, 429):
         raise HTTPException(status_code=429, detail="GitHub API rate limit hit — try again shortly")
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="GitHub search is temporarily unavailable")
     resp.raise_for_status()
 
     items = resp.json().get("items", [])
