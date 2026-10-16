@@ -14,10 +14,11 @@ WITH ranked_contributors AS (
     total_commits,
     SUM(total_commits) OVER (PARTITION BY repo_id) AS repo_total_commits,
     SUM(total_commits) OVER (
-      PARTITION BY repo_id ORDER BY total_commits DESC
+      PARTITION BY repo_id ORDER BY total_commits DESC, contributor_id ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS running_total,
     ROW_NUMBER() OVER (
-      PARTITION BY repo_id ORDER BY total_commits DESC
+      PARTITION BY repo_id ORDER BY total_commits DESC, contributor_id ASC
     ) AS contributor_rank
   FROM repo_contributor
 )
