@@ -25,7 +25,7 @@ A bus factor of **1** means a single person''s absence would kill the project (c
 - 🔍 **GitHub Search** — Add any public repo to the tracker via live GitHub search
 - 🗑️ **Repo Management** — Add/remove repos; `repos.txt` stays in sync automatically
 - ⚡ **FastAPI Backend** — Auto-generated `/docs` (Swagger UI) with all endpoints
-- 🛢️ **MySQL Database** — Fully normalized schema (3NF), window functions, ACID transactions
+- 🛢️ **MySQL Database** — Schema normalized to 5NF for the declared data dependencies, window functions, ACID transactions
 
 ---
 
@@ -87,13 +87,14 @@ bus-factor-tracker/
 source sql/schema_mysql.sql
 ```
 
-For an **existing** database created before the new analytics features, apply the migration once:
+For an **existing** database that has not yet received the health-score/module-ownership migration, apply migrations in order:
 
 ```bash
 mysql -u root -p bus_factor_tracker < sql/migrations/001_health_and_module_ownership.sql
+mysql -u root -p bus_factor_tracker < sql/migrations/002_5nf_file_ownership.sql
 ```
 
-Do not run the migration on a fresh database that already uses the updated schema.
+If migration `001` has already been applied, run only `002`. Back up the database first. Migrations are one-time operations and are not for fresh installs. Fresh databases should use `sql/schema_mysql.sql`. See [Database normalization (1NF–5NF)](docs/database-normalization.md) for candidate keys, decomposition rationale, and verification queries.
 
 ### 3. Environment Variables
 
