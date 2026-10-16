@@ -14,6 +14,7 @@ CREATE TABLE repository (
     created_at        DATE,
     is_archived       BOOLEAN DEFAULT FALSE,
     last_synced_at    DATETIME,
+    last_pushed_at    DATETIME,
     UNIQUE KEY uq_owner_name (owner, name)
 ) ENGINE=InnoDB;
 
@@ -95,3 +96,21 @@ CREATE TABLE bus_factor_snapshot (
 CREATE INDEX idx_repo_contributor_repo ON repo_contributor(repo_id);
 CREATE INDEX idx_issue_repo ON issue(repo_id);
 CREATE INDEX idx_snapshot_repo_time ON bus_factor_snapshot(repo_id, computed_at);
+
+
+-- Sampled recent commit-to-file ownership. This is an observed sample, not
+-- a complete historical blame index. Each sync refreshes the sampled rows.
+CREATE TABLE module_ownership (
+    repo_id       INT NOT NULL,
+    file_path     VARCHAR(1024) NOT NULL,
+    contributor_id INT NOT NULL,
+    commit_count  INT NOT NULL DEFAULT 0,
+    additions     INT NOT NULL DEFAULT 0,
+    deletions     INT NOT NULL DEFAULT 0,
+    sampled_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (repo_id, file_path(255), contributor_id),
+    FOREIGN KEY (repo_id) REFERENCES repository(repo_id) ON DELETE CASCADE,
+    FOREIGN KEY (contributor_id) REFERENCES contributor(contributor_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_module_ownership_repo ON module_ownership(repo_id);
