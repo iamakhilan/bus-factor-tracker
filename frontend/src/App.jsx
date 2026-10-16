@@ -29,22 +29,23 @@ export default function App() {
     localStorage.setItem('bft-theme', theme)
   }, [theme])
 
-  function reload() {
-    fetchSummary().then((value) => { setSummary(value); setError(null) }).catch((e) => setError(e.message))
-    fetchRepos({ risk: filter === 'All' ? undefined : filter, sort: 'risk' })
-      .then((value) => { setRepos(value); setError(null) })
-      .catch((e) => setError(e.message))
+  async function reload() {
+    setError(null)
+    try {
+      const [nextSummary, nextRepos] = await Promise.all([
+        fetchSummary(),
+        fetchRepos({ risk: filter === 'All' ? undefined : filter, sort: 'risk' }),
+      ])
+      setSummary(nextSummary)
+      setRepos(nextRepos)
+    } catch (e) {
+      setError(e.message)
+    }
   }
 
   useEffect(() => {
-    fetchSummary().then(setSummary).catch((e) => setError(e.message))
-  }, [])
-
-  useEffect(() => {
     setRepos(null)
-    fetchRepos({ risk: filter === 'All' ? undefined : filter, sort: 'risk' })
-      .then(setRepos)
-      .catch((e) => setError(e.message))
+    reload()
   }, [filter])
 
   // Client-side filter on top of whatever the backend already returned —
@@ -87,11 +88,11 @@ export default function App() {
         </div>
       </header>
 
-      {error && <div className="state-message error">{error} — is the backend running on localhost:8000?</div>}
+      {error && <div className="state-message error">{error} <button className="inline-retry" onClick={reload}>Retry</button></div>}
 
-      {!error && selectedRepo && <RepoDetail repoRef={selectedRepo} onBack={() => setSelectedRepo(null)} />}
+      {selectedRepo && <RepoDetail repoRef={selectedRepo} onBack={() => setSelectedRepo(null)} />}
 
-      {!error && !selectedRepo && (
+      {!selectedRepo && (
         <>
           <SummaryBar summary={summary} />
 
@@ -103,7 +104,7 @@ export default function App() {
           </div>
 
           {repos === null ? (
-            <div className="state-message">Loading…</div>
+            {error ? null : <div className="state-message">Loading…</div>}
           ) : (
             <RepoTable
               repos={visibleRepos}
