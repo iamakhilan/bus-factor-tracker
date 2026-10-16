@@ -107,28 +107,34 @@ def fetch_commit_activity(owner, repo):
 def fetch_recent_module_ownership(owner, repo, commit_limit=12):
     """Sample recent commit file lists to estimate contributor-to-module ownership."""
     commits = get_json(f"{API_ROOT}/repos/{owner}/{repo}/commits?per_page=30") or []
+    eligible = [
+        item for item in commits[:commit_limit]
+        if item.get("sha") and item.get("author") and item["author"].get("login")
+    ]
     totals = {}
-    for item in commits[:commit_limit]:
-        author = item.get("author")
-        sha = item.get("sha")
-        if not author or not author.get("login") or not sha:
-            continue
-        detail = get_json(f"{API_ROOT}/repos/{owner}/{repo}/commits/{sha}")
-        login = author["login"]
-        for changed in detail.get("files", []) or []:
-            path = changed.get("filename")
-            if not path:
-                continue
-            key = (path, login)
-            row = totals.setdefault(key, {
-                "file_path": path, "username": login, "commit_count": 0,
-                "additions": 0, "deletions": 0,
-            })
-            row["commit_count"] += 1
-            row["additions"] += int(changed.get("additions") or 0)
-            row["deletions"] += int(changed.get("deletions") or 0)
+    # Commit details are independent; a small worker pool limits wall time
+    # while keeping API concurrency bounded.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {
+            pool.submit(get_json, f"{API_ROOT}/repos/{owner}/{repo}/commits/{item['sha']}"): item
+            for item in eligible
+        }
+        for future, item in futures.items():
+            detail = future.result()
+            login = item["author"]["login"]
+            for changed in detail.get("files", []) or []:
+                path = changed.get("filename")
+                if not path:
+                    continue
+                key = (path, login)
+                row = totals.setdefault(key, {
+                    "file_path": path, "username": login, "commit_count": 0,
+                    "additions": 0, "deletions": 0,
+                })
+                row["commit_count"] += 1
+                row["additions"] += int(changed.get("additions") or 0)
+                row["deletions"] += int(changed.get("deletions") or 0)
     return list(totals.values())
-
 
 def get_paginated(url, max_pages=3, per_page=100, stop_before=None, updated_field="updated_at"):
     """
