@@ -15,17 +15,24 @@ export default function AddRepoModal({ onClose, onAdded }) {
     if (query.trim().length < 2) {
       setSuggestions([])
       setSearchError(null)
+      setSearching(false)
       return
     }
+    const controller = new AbortController()
     setSearching(true)
     setSearchError(null)
     const timeout = setTimeout(() => {
-      searchGithub(query.trim())
-        .then((results) => setSuggestions(results))
-        .catch((e) => setSearchError(e.message))
-        .finally(() => setSearching(false))
+      searchGithub(query.trim(), { signal: controller.signal })
+        .then((results) => { if (!controller.signal.aborted) setSuggestions(results) })
+        .catch((e) => {
+          if (!controller.signal.aborted && e.name !== 'AbortError') setSearchError(e.message)
+        })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false) })
     }, 350)
-    return () => clearTimeout(timeout)
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
   }, [query])
 
   async function handleAdd(repo) {
