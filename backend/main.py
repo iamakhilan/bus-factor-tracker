@@ -32,6 +32,7 @@ from pydantic import BaseModel
 from mysql.connector import MySQLConnection
 
 from db import get_connection
+from health_score import calculate_project_health
 
 # Load .env from the backend folder first, then fall back to the project
 # root's .env — this way GITHUB_TOKEN only has to exist in one place if
@@ -59,9 +60,14 @@ app = FastAPI(
 # Allow the React dev server (Phase 6) to call this API from the browser.
 # Vite's default port is 5173, Create React App's is 3000 — both included
 # so it works regardless of which you end up using.
+CORS_ORIGINS = [
+    origin.strip() for origin in os.environ.get(
+        "CORS_ORIGINS", "http://localhost:5173,http://localhost:3000"
+    ).split(",") if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
@@ -261,6 +267,183 @@ def get_repo_detail(owner: str, name: str, conn: MySQLConnection = Depends(get_c
 
     repo["contributors"] = contributors
     return repo
+
+
+@app.get("/api/repos/{owner}/{name}/health")
+def get_project_health(owner: str, name: str, conn: MySQLConnection = Depends(get_connection)):
+    """Explainable, deterministic 0-100 observable maintenance-risk indicator."""
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute(
+            "SELECT repo_id, last_pushed_at FROM repository WHERE owner = %s AND name = %s",
+            (owner, name),
+        )
+        repo = cur.fetchone()
+        if repo is None:
+            raise HTTPException(status_code=404, detail=f"Repo {owner}/{name} not found")
+
+        cur.execute(
+            """
+            SELECT COUNT(*) AS contributor_count, SUM(total_commits) AS total_commits,
+                   MAX(total_commits) AS top_commits
+            FROM repo_contributor WHERE repo_id = %s AND total_commits > 0
+            """,
+            (repo["repo_id"],),
+        )
+        contributor = cur.fetchone() or {}
+        total_commits = int(contributor.get("total_commits") or 0)
+        top_commits = int(contributor.get("top_commits") or 0)
+        top_pct = round(100 * top_commits / total_commits, 1) if total_commits else None
+
+        cur.execute(
+            """
+            SELECT COUNT(*) AS tracked_issue_count,
+                   SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_issue_count
+            FROM issue WHERE repo_id = %s
+            """,
+            (repo["repo_id"],),
+        )
+        issues = cur.fetchone() or {}
+        cur.execute(
+            "SELECT MAX(published_at) AS latest_release_at FROM repo_release WHERE repo_id = %s",
+            (repo["repo_id"],),
+        )
+        release = cur.fetchone() or {}
+        result = calculate_project_health({
+            "top_contributor_pct": top_pct,
+            "contributor_count": int(contributor.get("contributor_count") or 0),
+            "last_pushed_at": repo.get("last_pushed_at"),
+            "open_issue_count": int(issues["open_issue_count"] or 0) if issues.get("tracked_issue_count") else None,
+            "tracked_issue_count": int(issues["tracked_issue_count"] or 0),
+            "latest_release_at": release.get("latest_release_at"),
+        })
+        result["repository"] = f"{owner}/{name}"
+        result["data_notes"] = [
+            "Contributor statistics come from GitHub's aggregated contributor endpoint and may cover its available statistics window.",
+            "Issue counts reflect issue records stored by the bounded/incremental sync pipeline, not necessarily every issue in the repository.",
+            "Release recency uses the latest release record collected by the sync pipeline.",
+            "Repository push time is a maintenance-activity proxy; it does not prove that issues are being handled.",
+        ]
+        return result
+    finally:
+        cur.close()
+
+
+@app.get("/api/repos/{owner}/{name}/dependency-map")
+def get_contributor_dependency_map(owner: str, name: str, conn: MySQLConnection = Depends(get_connection)):
+    """Return a graph of contributors connected to sampled top-level modules."""
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute(
+            "SELECT repo_id FROM repository WHERE owner = %s AND name = %s",
+            (owner, name),
+        )
+        repo = cur.fetchone()
+        if repo is None:
+            raise HTTPException(status_code=404, detail=f"Repo {owner}/{name} not found")
+
+        cur.execute(
+            """
+            SELECT c.github_username, rc.total_commits
+            FROM repo_contributor rc
+            JOIN contributor c ON c.contributor_id = rc.contributor_id
+            WHERE rc.repo_id = %s AND rc.total_commits > 0
+            ORDER BY rc.total_commits DESC, c.github_username ASC
+            """,
+            (repo["repo_id"],),
+        )
+        contributor_rows = cur.fetchall()
+        total_commits = sum(int(row["total_commits"] or 0) for row in contributor_rows)
+        contributor_nodes = []
+        for rank, row in enumerate(contributor_rows, start=1):
+            commits = int(row["total_commits"] or 0)
+            contributor_nodes.append({
+                "id": f"contributor:{row['github_username']}",
+                "kind": "contributor",
+                "label": row["github_username"],
+                "rank": rank,
+                "commits": commits,
+                "activity_pct": round(100 * commits / total_commits, 1) if total_commits else 0,
+            })
+
+        cur.execute(
+            """
+            SELECT mo.file_path, mo.commit_count, mo.additions, mo.deletions, mo.sampled_at,
+                   c.github_username
+            FROM module_ownership mo
+            JOIN contributor c ON c.contributor_id = mo.contributor_id
+            WHERE mo.repo_id = %s
+            ORDER BY mo.file_path, mo.commit_count DESC, c.github_username
+            """,
+            (repo["repo_id"],),
+        )
+        ownership_rows = cur.fetchall()
+        cur.close()
+        cur = None
+
+        modules = {}
+        links = {}
+        sample_times = []
+        for row in ownership_rows:
+            path = row["file_path"]
+            module_name = path.split("/", 1)[0] if "/" in path else "(root files)"
+            module_id = f"module:{module_name}"
+            module = modules.setdefault(module_id, {
+                "id": module_id, "kind": "module", "label": module_name,
+                "files": set(), "by_contributor": {}, "sampled_commits": 0,
+                "additions": 0, "deletions": 0,
+            })
+            module["files"].add(path)
+            login = row["github_username"]
+            count = int(row["commit_count"] or 0)
+            module["by_contributor"][login] = module["by_contributor"].get(login, 0) + count
+            module["sampled_commits"] += count
+            module["additions"] += int(row["additions"] or 0)
+            module["deletions"] += int(row["deletions"] or 0)
+            link_key = (login, module_id)
+            links[link_key] = links.get(link_key, 0) + count
+            if row.get("sampled_at"):
+                sample_times.append(row["sampled_at"])
+
+        module_nodes = []
+        for module in modules.values():
+            distribution = module.pop("by_contributor")
+            ordered = sorted(distribution.items(), key=lambda item: (-item[1], item[0]))
+            total = sum(distribution.values())
+            top_login, top_count = ordered[0] if ordered else (None, 0)
+            top_pct = round(100 * top_count / total, 1) if total else 0
+            module_nodes.append({
+                **module,
+                "files": sorted(module["files"]),
+                "file_count": len(module["files"]),
+                "contributor_count": len(distribution),
+                "top_contributor": top_login,
+                "top_contributor_pct": top_pct,
+                "bottleneck": bool(total and (len(distribution) == 1 or top_pct >= 80)),
+            })
+
+        module_nodes.sort(key=lambda item: (-item["sampled_commits"], item["label"]))
+        graph_links = [{
+            "source": f"contributor:{login}", "target": module_id,
+            "commit_count": count,
+        } for (login, module_id), count in sorted(links.items())]
+        return {
+            "repository": f"{owner}/{name}",
+            "nodes": contributor_nodes + module_nodes,
+            "links": graph_links,
+            "contributors": contributor_nodes,
+            "modules": module_nodes,
+            "sampled_at": max(sample_times).isoformat() if sample_times else None,
+            "sample": {
+                "source": "GitHub commit detail files from up to 12 recent commits at last successful sync",
+                "complete_history": False,
+                "commit_details_sampled": len({(row["file_path"], row["github_username"]) for row in ownership_rows}),
+                "note": "Ownership is an observed recent sample, not complete git blame. No graph is fabricated when sample data is unavailable.",
+            },
+        }
+    finally:
+        if cur is not None:
+            cur.close()
 
 
 @app.get("/api/repos/{owner}/{name}/trend", response_model=list[SnapshotPoint])
