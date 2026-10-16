@@ -108,7 +108,7 @@ CREATE TABLE module_ownership (
     additions     INT NOT NULL DEFAULT 0,
     deletions     INT NOT NULL DEFAULT 0,
     sampled_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, file_path(255), contributor_id),
+    PRIMARY KEY (repo_id, file_path, contributor_id),
     FOREIGN KEY (repo_id) REFERENCES repository(repo_id) ON DELETE CASCADE,
     FOREIGN KEY (contributor_id) REFERENCES contributor(contributor_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
