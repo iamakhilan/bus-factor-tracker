@@ -102,7 +102,7 @@ CREATE INDEX idx_snapshot_repo_time ON bus_factor_snapshot(repo_id, computed_at)
 -- a complete historical blame index. Each sync refreshes the sampled rows.
 CREATE TABLE module_ownership (
     repo_id       INT NOT NULL,
-    file_path     VARCHAR(1024) NOT NULL,
+    file_path       VARCHAR(512) NOT NULL,
     contributor_id INT NOT NULL,
     commit_count  INT NOT NULL DEFAULT 0,
     additions     INT NOT NULL DEFAULT 0,
