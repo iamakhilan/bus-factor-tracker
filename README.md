@@ -1,202 +1,314 @@
-﻿# 🚌 Bus Factor Tracker
+<!--
+  Bus Factor Tracker
+  Keep this README accurate: screenshots and deployment URLs should only be added when verified.
+-->
 
-> *"I can tell you which of your project''s dependencies are one person away from going unmaintained."*
+<div align="center">
 
-A full-stack DBMS project that estimates **bus factor** and observable repository maintenance risk from live public GitHub data. Scores are risk indicators, not predictions of project failure or personal burnout.
+# 🚌 Bus Factor Tracker
 
-Built for **SEM 5 — Database Management Systems**.
+### See the people, modules, and maintenance signals behind open-source project risk.
 
----
+**A full-stack analytics dashboard for contributor concentration, code-module dependencies, and observable repository health.**
 
-## What Is Bus Factor?
+<br/>
 
-**Bus factor** = the smallest number of top contributors whose combined commits account for ≥50% of total recent activity.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![React](https://img.shields.io/badge/React-Vite-61DAFB?style=for-the-badge&logo=react&logoColor=20232A)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![MySQL](https://img.shields.io/badge/Database-MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
-A bus factor of **1** means a single person''s absence would kill the project (critical risk). A bus factor of **4+** means the project is healthy and distributed.
+<br/>
 
----
+[Features](#-what-you-can-do) · [Architecture](#-how-it-works) · [Quick start](#-get-running) · [Database design](#-database-design) · [API](#-api-at-a-glance)
 
-## Features
-
-- 📊 **Risk Dashboard** — Risk-ranked list of all tracked repos (Critical / High / Medium / Healthy)
-- 📈 **Trend Charts** — Bus factor over time for each repo
-- 🕸️ **Contributor Dependency Map** — Interactive graph connecting ranked contributors to top-level code modules, with sampled file ownership and bottleneck indicators
-- 💯 **Project Health Score** — Deterministic 0–100 score with configurable factor weights, per-factor evidence, missing-data coverage and scoring explanations
-- 🔍 **GitHub Search** — Add any public repo to the tracker via live GitHub search
-- 🗑️ **Repo Management** — Add/remove repos; `repos.txt` stays in sync automatically
-- ⚡ **FastAPI Backend** — Auto-generated `/docs` (Swagger UI) with all endpoints
-- 🛢️ **MySQL Database** — Schema normalized to 5NF for the declared data dependencies, window functions, ACID transactions
+</div>
 
 ---
 
-## Tech Stack
+## 💡 Why Bus Factor Tracker?
 
-| Layer | Technology |
-|---|---|
-| Database | MySQL |
-| Backend | Python + FastAPI |
-| Sync Script | Python (`scripts/sync_mysql.py`) |
-| Frontend | React + Recharts (Vite) |
+A repository can have dozens of contributors and still depend on one person for its most important code. The **bus factor** is a simple way to think about that concentration: how many of the top contributors account for at least half of recorded commit activity?
 
----
+Bus Factor Tracker turns public GitHub repository data into an explorable view of contributor concentration, historical bus-factor trends, file/module dependencies, and an explainable maintenance-signal score.
 
-## Project Structure
+> [!IMPORTANT]
+> These metrics are **signals, not predictions**. A low bus factor does not prove a project will fail, and a health score is not a measure of any contributor's burnout. Interpret results in the context of each project's goals and release practices.
 
+## ✨ What you can do
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📊 Risk dashboard
+Browse tracked repositories by risk level and compare their bus-factor and contributor metrics.
+
+### 📈 Historical trends
+Inspect bus-factor snapshots over time to see how contributor concentration changes across syncs.
+
+### 🕸️ Contributor dependency map
+Explore links between contributors and top-level code modules. Spot areas where recent sampled activity is concentrated in one contributor.
+
+</td>
+<td width="50%" valign="top">
+
+### 💯 Explainable project health
+See a 0–100 indicator, factor-level evidence, weights, missing-data coverage, and the methodology behind the result.
+
+### 🔎 Live GitHub search
+Search public repositories and add projects to your tracked list.
+
+### 🧰 Repository management
+Add or remove tracked repositories and keep the configured repository list synchronized.
+
+</td>
+</tr>
+</table>
+
+## 🧭 How it works
+
+```mermaid
+flowchart TD
+    A[Public GitHub API] --> B[Python sync pipeline]
+    B --> C[(MySQL)]
+    C --> D[FastAPI analytics endpoints]
+    D --> E[React + Vite dashboard]
+    B --> F[Contributor and file activity sample]
+    F --> C
 ```
-bus-factor-tracker/
-├── backend/
-│   ├── main.py          # FastAPI app and analytics endpoints
-│   ├── health_score.py  # Pure, deterministic health score calculation
-│   ├── db.py            # MySQL connection helper
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── api.js
-│   │   ├── styles.css
-│   │   └── components/
-│   ├── index.html
-│   └── package.json
-├── scripts/
-│   └── sync_mysql.py    # GitHub API → MySQL sync script
-├── sql/
-│   ├── schema_mysql.sql  # Full database schema
-│   ├── queries_mysql.sql # Analytics queries
-│   └── migrations/       # Existing-database migrations
-├── docs/
-│   └── database-normalization.md # 1NF–5NF design and migration guide
-├── tests/
-│   └── test_health_score.py
-├── repos.txt            # Curated list of repos to track
-├── .env.example         # Environment variable template
-└── requirements_mysql.txt
+
+1. **Collect** — the sync script retrieves repository metadata, contributor aggregates, weekly activity, and bounded samples of issues, pull requests, releases, and recent commit file changes.
+2. **Store** — MySQL keeps repository entities and activity facts in related tables, with foreign keys and uniqueness constraints.
+3. **Analyze** — SQL window functions calculate bus-factor snapshots; FastAPI exposes dashboard, health-score, and dependency-map data.
+4. **Explore** — React presents the results, including the evidence and data limitations behind each metric.
+
+## 🧱 Technology stack
+
+| Layer | Tools | Responsibility |
+|---|---|---|
+| Frontend | React, Vite, Recharts | Dashboard, repository detail, visual analytics |
+| API | Python, FastAPI, Pydantic | Repository data and analytical endpoints |
+| Data collection | Python, Requests | GitHub API sync and bounded incremental collection |
+| Database | MySQL 8.0+ | Relational storage, constraints, CTEs, window functions |
+| Testing | Python unittest, GitHub Actions | Scoring tests and automated checks |
+
+## 🚀 Get running
+
+### Prerequisites
+
+- Python 3.10 or newer
+- Node.js 18 or newer
+- MySQL 8.0 or newer
+- A GitHub personal access token with the minimum permissions needed to read public repository data
+
+### 1. Get the code
+
+```bash
+git clone https://github.com/iamakhilan/bus-factor-tracker.git
+cd bus-factor-tracker
 ```
 
----
+### 2. Create the database
 
-## Setup
-
-### 1. Prerequisites
-
-- Python 3.10+
-- Node.js 18+
-- MySQL 8.0+
-- A [GitHub Personal Access Token](https://github.com/settings/tokens) (read-only, public repos)
-
-### 2. Database
+For a **fresh database**, create it and load the schema:
 
 ```sql
-source sql/schema_mysql.sql
+CREATE DATABASE bus_factor_tracker;
 ```
 
-For an **existing** database that has not yet received the health-score/module-ownership migration, apply migrations in order:
+Then from the project root:
+
+```bash
+mysql -u root -p bus_factor_tracker < sql/schema_mysql.sql
+```
+
+For an **existing database**, back it up first. If migration `001` has not been applied, run the migrations in order:
 
 ```bash
 mysql -u root -p bus_factor_tracker < sql/migrations/001_health_and_module_ownership.sql
 mysql -u root -p bus_factor_tracker < sql/migrations/002_5nf_file_ownership.sql
 ```
 
-If migration `001` has already been applied, run only `002`. Back up the database first. Migrations are one-time operations and are not for fresh installs. Fresh databases should use `sql/schema_mysql.sql`. See [Database normalization (1NF–5NF)](docs/database-normalization.md) for candidate keys, decomposition rationale, and verification queries.
+If `001` has already been applied, run only `002`. Migrations are one-time operations for existing installations; do not run them on a fresh database. More detail is in [Database normalization](docs/database-normalization.md).
 
-### 3. Environment Variables
+### 3. Configure environment
+
+Copy the example environment file and fill in your own values:
 
 ```bash
 cp .env.example .env
-# Edit .env — fill in GITHUB_TOKEN, DB_HOST, DB_USER, DB_PASSWORD, and CORS_ORIGINS
 ```
 
-### 4. Backend
+Set the database connection values and `GITHUB_TOKEN` as required by your setup. Never commit real credentials or put the GitHub token in frontend variables.
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-# Swagger UI → http://localhost:8000/docs
-```
+### 4. Install Python dependencies
 
-### 5. Sync Data
+From the project root:
 
 ```bash
 pip install -r requirements_mysql.txt
+pip install -r backend/requirements.txt
+```
+
+### 5. Sync repository data
+
+```bash
 python scripts/sync_mysql.py
 ```
 
-### 6. Frontend
+The sync process populates MySQL using the repositories configured in `repos.txt`. Run it again when you want to refresh the tracked data.
+
+### 6. Start the API
+
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+### 7. Start the frontend
+
+In a second terminal:
 
 ```bash
 cd frontend
 npm install
 npm run dev
-# App → http://localhost:5173
 ```
 
-For deployment, create `frontend/.env.local` (or set your hosting provider's build environment) with `VITE_API_URL=https://your-api.example.com`. Set backend `CORS_ORIGINS` to a comma-separated list of the exact frontend origins. Never put the GitHub token in frontend variables.
+Open [http://localhost:5173](http://localhost:5173).
 
----
+For deployment, set `VITE_API_URL` to the deployed API URL in the frontend build environment and configure backend `CORS_ORIGINS` with the exact frontend origin(s). The GitHub token belongs on the server side only.
 
-## Risk Scoring
+## 📐 Metrics, explained
 
-| Risk Level | Criteria |
-|---|---|
-| 🔴 Critical | Bus factor = 1 |
-| 🟠 High | Bus factor = 2 |
-| 🟡 Medium | Bus factor 3–4 |
-| 🟢 Healthy | Bus factor 5+ |
+### Bus factor
 
----
+The bus factor is the **smallest number of highest-activity contributors whose combined recorded commits reach at least 50% of the repository's total recorded contributor commits**.
 
-## Project Health Score methodology
+| Bus factor | Tracker risk category |
+|---:|---|
+| 1 | 🔴 Critical |
+| 2 | 🟠 High |
+| 3–4 | 🟡 Medium |
+| 5+ | 🟢 Healthy |
 
-The health score is a **deterministic indicator of observable repository maintenance signals**, not a prediction of project failure and not a measure of any person's burnout. The default weights are defined in `backend/health_score.py` and can be changed there.
+These labels are this project's heuristic, not a universal industry standard.
 
-| Factor | Weight | Score rule |
+### Project Health Score
+
+The score is a deterministic, explainable indicator from 0 to 100. The default factor weights are configured in `backend/health_score.py`.
+
+| Signal | Weight | What it looks at |
 |---|---:|---|
-| Contributor concentration | 30% | 100 minus the top contributor's percentage of recorded contributor commits |
-| Maintenance activity | 25% | Days since GitHub's repository `pushed_at`: ≤7 days = 100; ≤30 = 85; ≤90 = 65; ≤180 = 40; ≤365 = 20; older = 0 |
-| Unresolved issue load | 15% | 100 × (1 − open / recorded total), minus a capped backlog penalty of 0.25 points per open issue (maximum 25 points), clamped to 0–100 |
-| Release recency | 15% | Days since latest recorded release: ≤30 days = 100; ≤90 = 85; ≤180 = 65; ≤365 = 40; older = 15 |
-| Contribution diversity | 15% | Recorded contributors with commits: 1 = 20; 2 = 40; 3–4 = 60; 5–9 = 80; 10+ = 100 |
+| Contributor concentration | 30% | How much recorded commit activity belongs to the top contributor |
+| Maintenance activity | 25% | Time since GitHub's latest repository push timestamp |
+| Unresolved issue load | 15% | Open issues relative to the issue records stored locally, with a capped backlog penalty |
+| Release recency | 15% | Time since the latest release collected by the sync process |
+| Contribution diversity | 15% | Number of contributors with recorded commits |
 
-The final score is the weighted mean of available factor scores, rounded to the nearest integer. **Missing factors are omitted and the remaining weights are renormalized.** If no factor is available, the score is `null` rather than a fabricated zero. The API returns configured weight, effective weight, factor score, weighted contribution, evidence, and data coverage.
+Available factors are combined using their effective weights; **missing factors are omitted and the remaining weights are renormalized**. If no factor can be calculated, the API returns `null` rather than inventing a zero score.
 
-Important data limits:
-- Contributor statistics use GitHub's aggregate contributor endpoint; the API does not provide a universal, exact trailing-12-month contribution window for every repository.
-- Issue records are bounded/incremental in this project, so issue evidence describes records stored locally and may not represent the repository's complete backlog.
-- Release recency is based on releases collected by the sync pipeline.
-- Repository `pushed_at` is a recent-activity proxy; it does not prove that issues are being answered or releases are being shipped.
-- The legacy median issue-response metric now uses the first comment by someone other than the issue author; public data does not reliably prove that commenter is a maintainer.
-- The score does not currently treat archived status as a negative signal; archived projects may be intentionally complete.
+#### Read the score with context
 
-## Contributor Dependency Map
+- Contributor aggregates are supplied by GitHub and do not represent a guaranteed, exact trailing-12-month window.
+- Issue collection is bounded/incremental, so locally stored issues may not equal the repository's complete issue backlog.
+- Release recency reflects the release records collected by the sync process.
+- Recent pushes are an activity proxy; they do not prove issues are handled or releases are shipped.
+- First-response time is based on the first observed comment by someone other than the issue author; public data does not reliably identify maintainers.
+- Archived projects may be intentionally complete, so archived status is not currently treated as a negative health signal.
 
-During sync, the pipeline requests up to 12 recent commit details and records changed files and commit authors in `module_ownership`. The API groups paths by top-level directory (root-level files use a separate group) and exposes links weighted by sampled file-touch commits. Modules are flagged as potential bottlenecks when only one contributor appears in the sample or the top contributor accounts for at least 80% of sampled touches.
+### Contributor dependency map
 
-This is deliberately a **bounded recent sample**, not full Git history, full code ownership, or `git blame`. If GitHub cannot provide a sample, the previous sample is retained; the UI does not invent graph nodes. The sample uses additional GitHub API requests (up to 12 commit-detail requests per successful repository sync).
+The sync pipeline samples up to 12 recent commit details and records changed file paths, contributors, commit counts, additions, and deletions. The API groups paths by their top-level directory (root files have a separate group) and builds contributor-to-module links.
 
-## Tests
+A module is marked as a **potential bottleneck** when the sample contains only one contributor or when one contributor accounts for at least 80% of sampled touches.
 
-Run deterministic scoring unit tests from the repository root:
+> [!NOTE]
+> This is a bounded recent sample, **not** complete Git history or `git blame`. The graph should be read as a snapshot of observed activity, not definitive code ownership. When a sample fetch fails, the previous successful sample is preserved.
+
+## 🗃️ Database design
+
+The schema separates repositories, contributors, contribution aggregates, issues, pull requests, releases, weekly activity, historical snapshots, modules, files, and file–contributor activity.
+
+The normalized ownership design separates:
+- `repo_module` — module identity within a repository
+- `repository_file` — file identity and its module relationship
+- `file_contributor_activity` — sampled activity for each file/contributor pair
+
+A compatibility `module_ownership` view supports the existing read-only API query shape. The schema is designed around the application's declared dependencies; see [docs/database-normalization.md](docs/database-normalization.md) for candidate keys, decomposition rationale, migration steps, and verification queries.
+
+## 🔌 API at a glance
+
+The FastAPI server provides interactive documentation at `/docs`.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/repos` | List tracked repositories, with optional risk and sorting filters |
+| `GET` | `/api/repos/{owner}/{name}` | Repository detail and contributor breakdown |
+| `GET` | `/api/repos/{owner}/{name}/trend` | Historical bus-factor snapshots |
+| `GET` | `/api/repos/{owner}/{name}/health` | Health score, factor evidence, and coverage |
+| `GET` | `/api/repos/{owner}/{name}/dependency-map` | Contributor-to-module graph and sampled ownership |
+| `GET` | `/api/stats/summary` | Dashboard aggregate counts |
+| `GET` | `/api/github/search?q=...` | Search public GitHub repositories |
+| `POST` | `/api/repos` | Add a repository to track |
+| `DELETE` | `/api/repos/{owner}/{name}` | Remove a tracked repository |
+
+## 🧪 Tests
+
+From the repository root:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-## API Endpoints
+GitHub Actions is configured to run backend checks and build the frontend on pushes and pull requests.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/repos` | Risk-ranked repo list |
-| `GET` | `/api/repos/{owner}/{name}` | Repo detail + contributor breakdown |
-| `GET` | `/api/repos/{owner}/{name}/trend` | Bus factor history |
-| `GET` | `/api/repos/{owner}/{name}/health` | Explainable 0–100 health score and factor evidence |
-| `GET` | `/api/repos/{owner}/{name}/dependency-map` | Contributor-to-module graph and sampled ownership bottlenecks |
-| `GET` | `/api/stats/summary` | Dashboard aggregate counts |
-| `GET` | `/api/github/search?q=...` | Search GitHub repos |
-| `POST` | `/api/repos` | Add a repo to track |
-| `DELETE` | `/api/repos/{owner}/{name}` | Remove a repo |
+## 📁 Project map
+
+```text
+bus-factor-tracker/
+├── backend/
+│   ├── main.py                  # FastAPI endpoints
+│   ├── health_score.py          # Explainable health-score calculation
+│   ├── db.py                    # MySQL connection helper
+│   └── requirements.txt
+├── frontend/
+│   └── src/                     # React app, API client, components, styles
+├── scripts/
+│   └── sync_mysql.py            # GitHub API → MySQL sync pipeline
+├── sql/
+│   ├── schema_mysql.sql         # Fresh-install schema
+│   ├── queries_mysql.sql        # Analytical SQL examples
+│   └── migrations/              # Existing-database migrations
+├── docs/
+│   └── database-normalization.md
+├── tests/
+│   └── test_health_score.py
+├── repos.txt
+├── .env.example
+└── requirements_mysql.txt
+```
+
+## 🛣️ Possible next steps
+
+- Add configurable time windows for contributor activity
+- Improve historical coverage for issue and pull-request analytics
+- Add richer module-level ownership history
+- Add integration tests against a disposable MySQL database
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE) if the repository's license file is present.
 
 ---
 
-## License
+<div align="center">
 
-MIT
+**Built to make project-maintenance risk easier to inspect — and easier to discuss.**
+
+<sub>If you find a metric confusing, start with its evidence and limitations before drawing a conclusion.</sub>
+
+</div>
