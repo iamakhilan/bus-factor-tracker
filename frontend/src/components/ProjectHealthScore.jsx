@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { fetchProjectHealth } from '../api.js'
 
+const FACTOR_LABELS = {
+  concentration: 'Contributor concentration',
+  activity: 'Maintenance activity',
+  unresolved_issues: 'Unresolved issue load',
+  release_recency: 'Release recency',
+  contribution_diversity: 'Contribution diversity',
+}
+
 function ScoreRing({ score }) {
   const safeScore = score == null ? 0 : Math.max(0, Math.min(100, score))
   return (
@@ -74,11 +82,9 @@ export default function ProjectHealthScore({ owner, name }) {
           <details className="health-methodology">
             <summary>Scoring weights & data limitations</summary>
             <ul>
-              <li>Contributor concentration: 30%</li>
-              <li>Maintenance activity: 25%</li>
-              <li>Unresolved issue load: 15%</li>
-              <li>Release recency: 15%</li>
-              <li>Contribution diversity: 15%</li>
+              {Object.entries(result.configured_weights).map(([key, weight]) => (
+                <li key={key}>{FACTOR_LABELS[key] || key}: {weight}%</li>
+              ))}
             </ul>
             <p>Missing factors are excluded and remaining weights are renormalized. Issue counts represent stored records and may be incomplete because sync is bounded/incremental. A high score is not a guarantee of project health; a low score is not a prediction of failure or personal burnout.</p>
             {result.data_notes?.map((note) => <p key={note}>{note}</p>)}
