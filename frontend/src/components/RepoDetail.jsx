@@ -97,7 +97,7 @@ export default function RepoDetail({ repoRef, onBack }) {
           <div className="stat-value">
             {detail.median_issue_response_hours != null ? `${Math.round(detail.median_issue_response_hours)}h` : 'n/a'}
           </div>
-          <div className="stat-label">Median issue response</div>
+          <div className="stat-label">Median first response</div>
         </div>
       </div>
 
