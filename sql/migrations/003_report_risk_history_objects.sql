@@ -55,13 +55,14 @@ BEGIN
   FROM v_repo_latest_snapshot latest
   JOIN repository r ON r.repo_id = latest.repo_id
   JOIN bus_factor_snapshot older
-    ON older.repo_id = latest.repo_id
-   AND older.computed_at <= latest.computed_at - INTERVAL p_days DAY
-  JOIN (
-    SELECT repo_id, MAX(snapshot_id) AS snapshot_id
-    FROM bus_factor_snapshot
-    GROUP BY repo_id
-  ) prior ON prior.repo_id = older.repo_id AND prior.snapshot_id = older.snapshot_id
+    ON older.snapshot_id = (
+      SELECT candidate.snapshot_id
+      FROM bus_factor_snapshot candidate
+      WHERE candidate.repo_id = latest.repo_id
+        AND candidate.computed_at <= latest.computed_at - INTERVAL p_days DAY
+      ORDER BY candidate.computed_at DESC, candidate.snapshot_id DESC
+      LIMIT 1
+    )
   WHERE fn_risk_rank(latest.risk_level) > fn_risk_rank(older.risk_level)
      OR latest.bus_factor < older.bus_factor
   ORDER BY fn_risk_rank(latest.risk_level) DESC, latest.computed_at DESC;
