@@ -117,20 +117,22 @@ For a **fresh database**, create it and load the schema:
 CREATE DATABASE bus_factor_tracker;
 ```
 
-Then from the project root:
+Then from the project root, apply the schema and the report-alignment database objects:
 
 ```bash
 mysql -u root -p bus_factor_tracker < sql/schema_mysql.sql
+mysql -u root -p bus_factor_tracker < sql/migrations/003_report_risk_history_objects.sql
 ```
 
-For an **existing database**, back it up first. If migration `001` has not been applied, run the migrations in order:
+For an **existing database**, back it up first. Apply only migrations that have not already been applied, in order:
 
 ```bash
 mysql -u root -p bus_factor_tracker < sql/migrations/001_health_and_module_ownership.sql
 mysql -u root -p bus_factor_tracker < sql/migrations/002_5nf_file_ownership.sql
+mysql -u root -p bus_factor_tracker < sql/migrations/003_report_risk_history_objects.sql
 ```
 
-If `001` has already been applied, run only `002`. Migrations are one-time operations for existing installations; do not run them on a fresh database. More detail is in [Database normalization](docs/database-normalization.md).
+Migration `003` adds historical risk alerts, a latest-snapshot view, a risk-ranking function, and a declining-repositories procedure, plus columns for the report's activity/inactivity/release signals. It is a one-time migration: do not rerun it on a database where it has already succeeded. The new signal columns remain NULL until the sync pipeline populates them; see the current implementation limitations below. More detail is in [Database normalization](docs/database-normalization.md).
 
 ### 3. Configure environment
 
