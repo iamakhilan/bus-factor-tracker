@@ -642,6 +642,53 @@ def remove_repo(owner: str, name: str, conn: MySQLConnection = Depends(get_conne
     return {"status": "removed", "owner": owner, "name": name}
 
 
+@app.get("/api/stats/declining")
+def get_declining_repositories(days: int = Query(1, ge=1, le=3650), conn: MySQLConnection = Depends(get_connection)):
+    """Repositories whose bus factor fell or categorical risk increased since a prior snapshot."""
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.callproc("sp_declining_repos", [days])
+        rows = []
+        for result in cur.stored_results():
+            rows.extend(result.fetchall())
+        for row in rows:
+            for key, value in list(row.items()):
+                if hasattr(value, "isoformat"):
+                    row[key] = value.isoformat()
+        return rows
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Risk-history database objects are not installed: {exc}")
+    finally:
+        cur.close()
+
+
+@app.get("/api/alerts")
+def get_recent_risk_alerts(limit: int = Query(20, ge=1, le=100), conn: MySQLConnection = Depends(get_connection)):
+    """Recent risk increases automatically recorded by the database trigger."""
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute(
+            """
+            SELECT a.alert_id, r.owner, r.name, a.snapshot_id,
+                   a.previous_level, a.new_level, a.created_at
+            FROM risk_alert a
+            JOIN repository r ON r.repo_id = a.repo_id
+            ORDER BY a.created_at DESC, a.alert_id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+        for row in rows:
+            if row.get("created_at") is not None:
+                row["created_at"] = row["created_at"].isoformat()
+        return rows
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Risk-alert database objects are not installed: {exc}")
+    finally:
+        cur.close()
+
+
 @app.get("/")
 def root():
     return {"message": "Bus Factor Tracker API — see /docs for available endpoints"}
