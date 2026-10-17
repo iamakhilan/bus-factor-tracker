@@ -254,6 +254,8 @@ The FastAPI server provides interactive documentation at `/docs`.
 | `GET` | `/api/repos/{owner}/{name}/health` | Health score, factor evidence, and coverage |
 | `GET` | `/api/repos/{owner}/{name}/dependency-map` | Contributor-to-module graph and sampled ownership |
 | `GET` | `/api/stats/summary` | Dashboard aggregate counts |
+| `GET` | `/api/stats/declining?days=180` | Repositories with a declining bus factor or increased risk, using the stored procedure |
+| `GET` | `/api/alerts?limit=20` | Recent risk increases recorded by the database trigger |
 | `GET` | `/api/github/search?q=...` | Search public GitHub repositories |
 | `POST` | `/api/repos` | Add a repository to track |
 | `DELETE` | `/api/repos/{owner}/{name}` | Remove a tracked repository |
